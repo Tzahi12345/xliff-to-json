@@ -1,6 +1,8 @@
 var fs = require('fs');
 var path = require('path');
-const xliff2js = require('xliff/xliff12ToJs');
+const xml2js = require('xml2js');
+const xliff12js = require('xliff/xliff12ToJs');
+const xliff2js = require('xliff/cjs/xliff2js')
 const targetOfjs = require('xliff/targetOfjs');
 const utils = require('./utils');
 
@@ -29,7 +31,7 @@ function findByExt(base,exts,files,result)
     return result
 }
 
-function convert(input_path) {
+async function convert(input_path) {
     if (!input_path) {
         return;
     }
@@ -62,7 +64,7 @@ function convert(input_path) {
         let file_info = fs.readFileSync(file, 'utf8');
 
         // getting data
-        const json_obj = xliff2js(file_info);
+        const json_obj = await determineXliffVersion(file_info) === '2.0' ? await xliff2js(file_info) : await xliff12js(file_info);
 
         // got data, now convert to JSON
         const res = targetOfjs(json_obj);
@@ -76,12 +78,40 @@ function convert(input_path) {
                 console.log(`INFO: Skipping converting "${file}" to "${new_path}" as the output is equivalent.`);
             } else {
                 console.log(`INFO: Overwriting "${file}" with "${new_path}".`);
+                fs.writeFileSync(new_path, string_res);
             }
         } else {
             fs.writeFileSync(new_path, string_res);
             console.log(`INFO: Converted "${file}" to "${new_path}".`);
         }
     }
+}
+
+async function determineXliffVersion(xliffString) {
+    return new Promise((resolve, reject) => {
+      xml2js.parseString(xliffString, (err, result) => {
+            if (err) {
+                reject(err);
+            } else {
+                try {
+                    // Check for XLIFF 2.0
+                    if (result.xliff && result.xliff.$.version === '2.0') {
+                        resolve('2.0');
+                    }
+                    // Check for XLIFF 1.2
+                    else if (result.xliff && result.xliff.$.version === '1.2') {
+                        resolve('1.2');
+                    }
+                    // Version not recognized
+                    else {
+                        resolve(null);
+                    }
+                } catch (e) {
+                    reject(null);
+                }
+            }
+        });
+    });
 }
 
 if (require.main === module) {
